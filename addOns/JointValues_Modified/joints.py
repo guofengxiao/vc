@@ -1,11 +1,23 @@
 from vcCommand import *
 from vcHelpers.Application import *
+import vcMatrix
 global diags, lastDiag
 app = getApplication()
 sim = app.Simulation
 sel = app.getSelection(VC_SELECTION_COMPONENT)
 diags = []
 listeners = []
+# Common
+def PrintvcMatrix( Matrix ):
+    print("%s"%Matrix)
+    print("\tN: \t%f \t%f \t%f \t0"%(Matrix.N.X,Matrix.N.Y,Matrix.N.Z))
+    print("\tO: \t%f \t%f \t%f \t0"%(Matrix.O.X,Matrix.O.Y,Matrix.O.Z))
+    print("\tA: \t%f \t%f \t%f \t0"%(Matrix.A.X,Matrix.A.Y,Matrix.A.Z))
+    print("\tP: \t%f \t%f \t%f \t1"%(Matrix.P.X,Matrix.P.Y,Matrix.P.Z))
+    print("\tWPR: \t%f \t%f \t%f "%(Matrix.WPR.X,Matrix.WPR.Y,Matrix.WPR.Z))
+
+
+
 #]--------------------------------------------------------------------------------[#
 def showJoints(c):
   global joints, diags, listeners
@@ -109,13 +121,33 @@ def printValues(property):
   else:
     print "dialog not found!"
 #]--------------------------------------------------------------------------------[#
+# 引起craches 3DCreate
 def deldiag(property):
+  pass
+  return
   global diags
   selObjName = property.Name.split('-')[0] # parse the component name from the beginning of the button name...
   diag = findDiag(selObjName)
   diag[1].hide()
   print 'deleteDiag pressed.. calling deleteDiag for %r:%r'%(selObjName,diag[0])
   deleteDiag(diag[0]) #sel.Objects[0])
+#]--------------------------------------------------------------------------------[#
+def print44MatrixValues(property):
+  global diags
+  selObjName = property.Name.split('-')[0]# 获取当前传入参数的组件名
+  diag = findDiag(selObjName)
+  #print diag
+  #print "="*47# 可以打印多行相同的值 解决 清除屏幕 不能答应多行相同的值
+  if diag:
+    joints = diag[2]
+    rootMatrixInW = diag[0].WorldPositionMatrix
+    for each in joints:
+      print("="*47)
+      print( each.Name )
+      mat = vcMatrix.new( rootMatrixInW )
+      mat.invert()
+      eachNode = diag[0].findNode(each.Name)
+      PrintvcMatrix(mat*eachNode.WorldPositionMatrix) # 打印每一个关节相对机器人root的坐标
 #]--------------------------------------------------------------------------------[#
 def createButtons(diag):
   #nonmodal addProperty(name,type,onchanged,constaints)
@@ -124,6 +156,7 @@ def createButtons(diag):
   #This is commented out, because with the modifications to the deleteDiag-function it craches 3DCreate most of the time.
   #in it's original form the function didn't do much: x was either set to None or if x[0] was equal to c it just broke out of the loop.. 
   #buttonB = diag[1].addProperty(diag[0].Name + '- deleteDiag', VC_BUTTON, deldiag, VC_PROPERTY_DEFAULT)
+  buttonB = diag[1].addProperty(diag[0].Name + '- Print Every Joint Values(4*4)', VC_BUTTON, print44MatrixValues, VC_PROPERTY_DEFAULT)
 #]--------------------------------------------------------------------------------[#
 def findDiag(selObjName):
   global diags
