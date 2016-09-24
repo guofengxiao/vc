@@ -1,0 +1,18 @@
+1 kr60ha_pointTwo.vcm
+
+选择机器人 General ，参数设置点位置，功能是在Behaviour下rPythonScript
+a. GetCurrentTCP 按钮是获取当前机器TCP位置，位置信息存储到p1点
+b. p1Top2是 p2 = p1 功能
+c. 修改p2,p2位目标TCP位置
+d. 勾选ReadyFalg
+c. 仿真开始，机器人到达指定P2点
+e. 到达指定点后，点击GetCurrentTCP，看目标点位置，存储在p1，p1和p2一致
+
+
+
+2 kr60ha_pointTwo.vcm
+
+a. OnRun中自行添加三个点(p1 p2 p3)，机器人依次走三个点并划线显示
+b. Teach 下Sequence三点是实际p1 p2 p3对应位置的三个statement，此处只是便于观察三点的实际位置，仿真中没有调用Sequence1
+
+ 

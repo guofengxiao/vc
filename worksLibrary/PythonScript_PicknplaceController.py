@@ -1,11 +1,31 @@
 # v 0.1
+# v 0.2 ToDo: Evere robot Pick Place Num upper limit
+#       19:05 2016/7/30: 1. StopPallets = AtGreenSensor or AtRedSensor 停顿
+#                        2. StopPallets = Never 
+#                        3. StopPallets: AtRedSensor 第二个工件直接Move 不停止
+#       20:45 2016/7/31  4. pallet 内部定义字典记录抓取释放的个数 palletCapacityRecord = {}
 from vcScript import *
 from vcHelpers.Robot import *
 import vcMatrix
 
 
+sim = getSimulation()
+# 信号说明
+'''
+  # 六个信号 与 当前脚本绑定
+    六个信号：
+              ArriveComponentSignal 通过 InConvInterface  与传送带 ArriveComponentSignal  相连
+              ExitComponentSignal   通过 InConvInterface  与传送带 ExitComponentSignal    相连
+              
+              ArrivePalletSignal    通过 OutConvInterface 与传送带 ArrivePalletSignal     相连
+              ExitPalletSignal      通过 OutConvInterface 与传送带 ExitPalletSignal       相连
+              
+              PickPalletSignal      通过 PickPalletInterface 与对应组件(暂时没有例子)     相连
+              ConvTransSignal       OnSignal 未做处理 其他处相关操作被注释掉 目前没有用上
+'''
 def OnSignal( signal ):
   global parts, pallets, pendingPallets, comp
+  global palletPlaceCapacityFull
   if signal.Value:
     #########
     ## PARTS ##
@@ -43,6 +63,7 @@ def OnSignal( signal ):
         isNotFull = True
       if isNotFull:
         if comp.StopPallets == 'AtGreenSensor':
+          
           pallet.stopMovement()
         if not pallet in pallets:
           pallets.append(pallet)
@@ -59,11 +80,17 @@ def OnSignal( signal ):
             isNotFull = patternNotFull(pallet,x,y,z)
         else:
           isNotFull = True
+        
+        #if palletPlaceCapacityFull == True:
+          #isNotFull = False
         if isNotFull:
           if comp.StopPallets == 'AtRedSensor':
             pallet.stopMovement()
           else:
-            pallets.remove(pallet)
+            pass
+            #pallets.remove(pallet) #不注释Never第二次不停止
+        
+          
     #######################
     ## PALLET FROM PALLET_INLET ##
     ######################
@@ -74,7 +101,7 @@ def OnSignal( signal ):
       
 
 
-
+# 判断 pallet是否装满 返回True 或者 False
 def patternNotFull(pallet,x,y,z,id= None):
   global customPos
   if patternType.Value == 'XYZ':
@@ -106,6 +133,12 @@ def contTrans(part,arrive):
   
 def OnRun():
   global parts, pallets, comp, customPos, pendingPallets, convTransSignal, trigConts
+  global palletPlaceCapacityFull
+  global palletProId
+  global palletCapacityRecord
+  palletPlaceCapacityFull = None
+  palletProId = 0
+  palletCapacityRecord = {}
   try:
     robo = getRobot('RobotInterface')
     #print robo.__doc__
@@ -220,10 +253,11 @@ def OnRun():
     targetPart = None
     targetPallet = None
     targetConv = None
+    '''
     if not parts:
       idlePos = comp.getProperty('Advanced::RobotIdlePos Z').Value
       robo.jointMoveToComponent(inConvs[0], Tz = idlePos, OnFace = 'top')
-      
+    '''
     # ###################################################################
     #  SEARCH TARGETPART AND TARGETPALLET/-CONVEYOR
     # ###################################################################
@@ -396,15 +430,20 @@ def OnRun():
       ##
       ## Pick part
       ##
-      
+        
       # Part sizes
       partSize = targetPart.Geometry.BoundDiagonal*2.0
       partSizeX = partSize.X
       partSizeY = partSize.Y
       partSizeZ = partSize.Z
       aX,aY,aZ = getApproach('Advanced::ApproachOnPart')
-      robo.jointMoveToComponent(targetPart, Tx = aX, Ty = aY, Tz = aZ+partSizeZ)
-      robo.pickMovingPart(targetPart,Approach = aZ)
+      GraspContainerBehaviour = robo.Component.findBehaviour("GraspContainer")
+      if GraspContainerBehaviour.ComponentCount == 0:
+          #print "id(targetPallet):",id(targetPallet)
+          #print "palletProId:",palletProId
+          if id(targetPallet) != palletProId or palletPlaceCapacityFull != True:
+              robo.jointMoveToComponent(targetPart, Tx = aX, Ty = aY, Tz = aZ+partSizeZ)
+              robo.pickMovingPart(targetPart,Approach = aZ)
       again = True # Force logic to loop again, coz there's a change in environment
       # if part was on pallet try to start its pallet if it's now empty
       if partsOnPallet.Value:
@@ -417,7 +456,7 @@ def OnRun():
       
       ##
       ## Place part
-      ##
+      ## 将抓取的物件放置托盘中
       # Part placing on pallet
       if placeParts.Value == 'OnPallets':
         # move on top of conveyor if idle
@@ -429,6 +468,19 @@ def OnRun():
         #condition(lambda: pallets) # wait pallet
           
         childCount = len(targetPallet.Children) - comp.getProperty('Pattern::PalletChildsOnArrive').Value # Count pallet childs
+        '''
+        palletProId = id(targetPallet)
+        palletPlaceCapacity = getComponent().getProperty("Pattern::PalletPlaceCapacity").Value
+        if palletPlaceCapacity > 0:
+            if childCount > palletPlaceCapacity - 1:
+              palletPlaceCapacityFull = True
+              targetPallet.startMovement()
+              if targetPallet in pallets:
+                pallets.remove(targetPallet)
+              continue
+            else:
+              palletPlaceCapacityFull = None
+        '''
         if patternType.Value == 'XYZ':
           x, y, z  = getPatternSizes(targetPallet)
           cloneIndex, patternIndex = divmod( childCount, getFullPatternSize(x,y,z,partid) )
@@ -499,7 +551,7 @@ def OnRun():
         #robo.jointMoveToMtx(targetMtx, Tx = aX, Ty = aY, Tz = aZ, Rx = 180 + a, Ry = b, Rz = c)
         # Move close
         robo.jointMoveToMtx(targetMtx, Tx = aX, Ty = aY, Tz = aZ, Rx = 180.0)
-        targetMtx = offsetmtx
+        targetMtx = offsetmtx#创建对象的引用 引用的改变直接影响对象本身
         #targetMtx.translateRel(placeX,placeY,placeZ+partSizeZ)
         targetMtx.translateRel(placeX,placeY,placeZ)
         targetMtx.rotateRelZ(c)
@@ -508,21 +560,47 @@ def OnRun():
         exactMtx = vcMatrix.new(targetMtx)
         targetMtx.translateRel(0,0,partSizeZ) # Let's retract TCP with the part height amount
         # Move on part
-        robo.linearMoveToMtx_ExternalBase(targetPallet,offsetmtx, Rx = 180.0)
-        robo.releaseComponent(targetPallet)
+        robo.linearMoveToMtx_ExternalBase(targetPallet,offsetmtx, Rx = 180.0)# 线性追踪底盘
+        robo.releaseComponent(targetPallet) # 将法兰组件放置底盘中
+        palletPlaceCapacity = getComponent().getProperty("Pattern::PalletPlaceCapacity").Value
+        if id(targetPallet) in palletCapacityRecord:
+          if palletCapacityRecord[id(targetPallet)] < palletPlaceCapacity:
+            palletCapacityRecord[id(targetPallet)] += 1
+          else:
+            palletCapacityRecord[id(targetPallet)] = palletCapacityRecord[id(targetPallet)] - palletPlaceCapacity
+            palletCapacityRecord[id(targetPallet)] += 1
+        else:
+          palletCapacityRecord[id(targetPallet)] = 1
+       
         #exactPos(targetPart, placeX, placeY, placeZ, xx,yy,zz,v.Z+c, v.Y+b, v.X+a)
         exactPos2(targetPart,exactMtx)
         robo.linearMoveRel(Tx= -aX,Ty= -aY, Tz= -aZ)
+        # 判空操作
         if comp.StopPallets:
           if patternPerProdID.Value:
-            notFull = patternNotFull(targetPallet,x,y,z, partid)
+            notFull = patternNotFull(targetPallet,x,y,z, partid) # PattrenType::Custom  Pattern Per ProdID 默认为False
           else:
-            notFull = patternNotFull(targetPallet,x,y,z, id = None)
-          if not notFull:
+            notFull = patternNotFull(targetPallet,x,y,z, id = None)# PattrenType::XYZ 默认执行
+          if not notFull: # 托盘装满 托盘由静止开始运动
             targetPallet.startMovement()
+            # print("pallet start move!")
             if targetPallet in pallets:
               pallets.remove(targetPallet)
-      
+            continue
+        childCount = len(targetPallet.Children) - comp.getProperty('Pattern::PalletChildsOnArrive').Value # Count pallet childs
+        palletProId = id(targetPallet)
+        palletPlaceCapacity = getComponent().getProperty("Pattern::PalletPlaceCapacity").Value
+        
+        if palletPlaceCapacity > 0:
+            #if childCount > palletPlaceCapacity - 1:
+            if palletCapacityRecord[id(targetPallet)] == palletPlaceCapacity:
+              palletPlaceCapacityFull = True
+              targetPallet.startMovement()
+              if targetPallet in pallets:
+                pallets.remove(targetPallet)
+              continue
+            else:
+              palletPlaceCapacityFull = None       
       
       
       # Part Placing On Conveyor
